@@ -1,66 +1,35 @@
-<html>
-	<head>
-	    <title>WebGL Fireworks</title>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>WebGL Fireworks</title>
+ </head>
 
-	    <style>
-	      /* remove the border */
-	      body {
-	        border: 0;
-	        background-color: black;
-            overflow: hidden;
-	      }
-	      /* make the canvas the size of the viewport */
-	      canvas {
-	        width: 100vw;
-	        height: 100vh;
-	        display: block;
-	      }
-          html {
-            overflow: hidden;
-}
-	    </style>
+  <body onload="main()">
+    <canvas id="webgl" width="800" height="600">
+    Please use a browser that supports "canvas"
+    </canvas>
 
-	    <script src="fireworks.js" type="text/javascript"></script>
+    <script id="vsource" type="GLSL">
+      attribute vec4 a_Position;
+      uniform mat4 u_ModelMatrix;
+      void main() {
+        gl_Position = u_ModelMatrix * a_Position;
+      }
+    </script>
 
-	    <script>
-	    	function Ready(){
-	    		var GL = new WebGL("glCanvas", "VertexShader", "FragShader");
-	    		GL.drawScene();
-	    	}
-	    </script>
+    <script id="fsource" type="GLSL">
+      precision mediump float;
+      uniform vec4 u_color;
+      void main() {
+        gl_FragColor = u_color;
+      }
+    </script>
 
-	</head>
-
-<body onload="Ready()">
-
-	<canvas id="glCanvas"></canvas>
-
-	<script type="GLSL" id="VertexShader">
-	  attribute vec2 a_position;
-
-	  uniform vec2 u_resolution;
-	 
-	  void main() {
-	    // convert the position from pixels to 0.0 to 1.0
-	    vec2 zeroToOne = a_position / u_resolution;
-	 
-	    // convert from 0->1 to 0->2
-	    vec2 zeroToTwo = zeroToOne * 2.0;
-	 
-	    // convert from 0->2 to -1->+1 (clipspace)
-	    vec2 clipSpace = zeroToTwo - 1.0;
-	 
-	    gl_Position = vec4(clipSpace, 0, 1);
-	  }
-	</script>
-
-	<script type="GLSL" id="FragShader">
-		precision mediump float;
-
-		void main() {
-			gl_FragColor = vec4(1, 0, 0.5, 1);
-		}
-	</script>
-
-</body>
+    <script src="webgl-utils.js"></script>
+    <script src="debug.js"></script>
+    <script src="utils.js"></script>
+    <script src="matrix.js"></script>
+    <script src="fireworks.js"></script>
+  </body>
 </html>

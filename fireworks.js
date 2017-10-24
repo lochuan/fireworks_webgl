@@ -1,86 +1,203 @@
-function WebGL(CID, VID, FID){
-	var canvas = document.getElementById(CID);
-	this.GL = canvas.getContext("webgl");
-	if(!this.GL){
-		alert("Your browser does not support WebGL");
-	}else{
-		var vertextShaderSource = document.getElementById(VID).text;
-		var fragmentShaderSource = document.getElementById(FID).text;
-		var vertexShader = createShader(this.GL, this.GL.VERTEX_SHADER, vertextShaderSource);
-		var fragmentShader = createShader(this.GL, this.GL.FRAGMENT_SHADER, fragmentShaderSource);
+// RotatingTranslatedTriangle.js (c) 2012 matsuda
+// Vertex shader program
+var vshader_source = load_source("vsource");
 
-		var program = createProgram(this.GL, vertexShader, fragmentShader);
-	}
+// Fragment shader program
+var fshader_source = load_source("fsource");
 
-	this.drawScene = function(){
-		this.GL.useProgram(program);
-		resize(canvas);
-		prepareData(this.GL);
-		this.GL.clearColor(0, 0, 0, 1);
-		this.GL.clear(this.GL.COLOR_BUFFER_BIT);
-		this.GL.viewport(0, 0, canvas.width, canvas.height);
-		this.GL.drawArrays(this.GL.TRIANGLES, 0, 6);
-	}
+// Rotation angle (degrees/second)
+var ANGLE_STEP = 360;
 
-	function prepareData(gl){
-		var resolutionUniformLocation = gl.getUniformLocation(program, "u_resolution");
-		gl.uniform2f(resolutionUniformLocation, canvas.width, canvas.height);
+// Fireworks vertices
+var vertices = [];
 
-		var positonBuffer = gl.createBuffer();
-		gl.bindBuffer(gl.ARRAY_BUFFER, positonBuffer);
-		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-		var positonAttributeLocation = gl.getAttribLocation(program, "a_position");
-		gl.vertexAttribPointer(positonAttributeLocation, 2, gl.FLOAT, false, 0, 0);
-		gl.enableVertexAttribArray(positonAttributeLocation);
+// The location of the firework
+var coord_x = 0
+var coord_y = 0
 
+function main() {
+  // Retrieve <canvas> element
+  var canvas = document.getElementById('webgl');
 
-	}
-	function createShader(gl, type, source){
-		var shader = gl.createShader(type);
-		gl.shaderSource(shader, source);
-		gl.compileShader(shader);
-		var success = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
-		if(success){
-			return shader;
-		}
-	}
+  canvas.onmousedown = function(ev){ click(ev, gl, canvas) }
 
-	function createProgram(gl, VShader, FShader){
-		var program = gl.createProgram();
-		gl.attachShader(program, VShader);
-		gl.attachShader(program, FShader);
-		gl.linkProgram(program);
-		var success = gl.getProgramParameter(program, gl.LINK_STATUS);
-		if(success){
-			return program;
-		}
-	}
+  // Get the rendering context for WebGL
+  var gl = getWebGLContext(canvas);
+  if (!gl) {
+    console.log('Failed to get the rendering context for WebGL');
+    return;
+  }
+  // Initialize shaders
+  if (!initShaders(gl, vshader_source, fshader_source)) {
+    console.log('Failed to intialize shaders.');
+    return;
+  }
 
-	function resize(canvas) {
-	  var realToCSSPixels = window.devicePixelRatio;
+  // Write the positions of vertices to a vertex shader
+  var n = initVertexBuffers(gl, "trajectory");
+  if (n < 0) {
+    console.log('Failed to set the positions of the vertices');
+    return;
+  }
 
-	  // Lookup the size the browser is displaying the canvas in CSS pixels
-	  // and compute a size needed to make our drawingbuffer match it in
-	  // device pixels.
-	  var displayWidth  = Math.floor(canvas.clientWidth  * realToCSSPixels);
-	  var displayHeight = Math.floor(canvas.clientHeight * realToCSSPixels);
+  console.log("clearColor");
+  // Specify the color for clearing <canvas>
+  gl.clearColor(0, 0, 0, 1);
 
-	  // Check if the canvas is not the same size.
-	  if (canvas.width  !== displayWidth ||
-	      canvas.height !== displayHeight) {
+  // Get storage location of u_ModelMatrix
+  var u_ModelMatrix = gl.getUniformLocation(gl.program, 'u_ModelMatrix');
+  if (!u_ModelMatrix) { 
+    console.log('Failed to get the storage location of u_ModelMatrix');
+    return;
+  }
+  // Get storage location of u_color
+  var u_Color = gl.getUniformLocation(gl.program, 'u_color');
+  if (!u_ModelMatrix) { 
+    console.log('Failed to get the storage location of u_color');
+    return;
+  }
+  var currentAngle = 0.0;
+  var currentColor = new Float32Array([0.0, 0.0, 0.0, 1.0]);
+  var currentScale = new Float32Array([0.2, 0.2, 1.0]);
+  var modelMatrix = new Matrix4();
 
-	    // Make the canvas the same size
-	    canvas.width  = displayWidth;
-	    canvas.height = displayHeight;
-	  }
-	}
+  function click(ev, gl, canvas) {
+    let x = ev.clientX;
+    let y = ev.clientY;
+    cord_to_clip(x, y, canvas);
+    currentColor = new Float32Array([1.0, 1.0, 1.0, 1.0]);
+    currentScale = new Float32Array([0.2, 0.2, 1.0])
 
-	var positions = [
-	  10, 20,
-	  120, 20,
-	  10, 80,
-	  10, 80,
-	  120, 20,
-	  120, 80,
-	];
+  }
+  // Start drawing
+  var tick = function() {
+    currentAngle = rotate(currentAngle);  // Update the rotation angle
+    currentColor = fadeOut(currentColor); // Update the color
+    currentScale = scaleUp(currentScale);
+    draw(gl, n, currentAngle, modelMatrix, u_ModelMatrix, coord_x, coord_y, currentColor, u_Color, currentScale);   // Draw the triangle
+    requestAnimationFrame(tick, canvas); // Request that the browser ?calls tick
+  };
+  tick();
+}
+
+function initVertexBuffers(gl) {
+
+    var n = gen_vertices();
+ 
+  // Create a buffer object
+  var vertexBuffer = gl.createBuffer();
+  if (!vertexBuffer) {
+    console.log('Failed to create the buffer object');
+    return -1;
+  }
+
+  // Bind the buffer object to target
+  gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+  // Write date into the buffer object
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+
+  // Assign the buffer object to a_Position variable
+  var a_Position = gl.getAttribLocation(gl.program, 'a_Position');
+  if(a_Position < 0) {
+    console.log('Failed to get the storage location of a_Position');
+    return -1;
+  }
+  gl.vertexAttribPointer(a_Position, 2, gl.FLOAT, false, 0, 0);
+
+  // Enable the assignment to a_Position variable
+  gl.enableVertexAttribArray(a_Position);
+
+  return n;
+}
+
+function draw(gl, n, currentAngle, modelMatrix, u_ModelMatrix, coord_x, coord_y, currentColor, u_Color, currentScale) {
+  
+  // Set the rotation matrix
+  modelMatrix.setTranslate(coord_x, coord_y, 0);
+  modelMatrix.scale(currentScale[0],currentScale[1],currentScale[2]);
+  modelMatrix.rotate(currentAngle, 0, 0, 1);
+
+  // Pass the rotation matrix to the vertex shader
+  gl.uniformMatrix4fv(u_ModelMatrix, false, modelMatrix.elements);
+
+  // Pass the rotation matrix to the vertex shader
+  gl.uniform4fv(u_Color, currentColor);
+
+  // Clear <canvas>
+  gl.clear(gl.COLOR_BUFFER_BIT);
+
+  // Draw the rectangle
+  gl.drawArrays(gl.TRIANGLE_FAN, 0, n);
+}
+
+// Last time that this function was called
+var g_last = Date.now();
+function rotate(angle) {
+  // Calculate the elapsed time
+  var now = Date.now();
+  var elapsed = now - g_last;
+  g_last = now;
+  // Update the current rotation angle (adjusted by the elapsed time)
+  var newAngle = angle + (ANGLE_STEP * elapsed) / 1000.0;
+  return newAngle %= 360;
+}
+
+var f_last = Date.now();
+function fadeOut(color) {
+  // Calculate the elapsed time
+  var now = Date.now();
+  var elapsed = now - f_last;
+  f_last = now;
+  // Update the current rotation angle (adjusted by the elapsed time)
+  var newcolor = color[0] - (elapsed / 1500.0);
+  if (newcolor > 0){
+      return new Float32Array([newcolor, newcolor, newcolor, 1.0]);
+  }else {
+    return new Float32Array([0.0,0.0,0.0,1.0]);
+  }
+}
+
+var s_last = Date.now();
+function scaleUp(scale) {
+  // Calculate the elapsed time
+  var now = Date.now();
+  var elapsed = now - s_last;
+  s_last = now;
+  var newScale = scale[0] + (elapsed / 300);
+    if (newScale < 3) {
+        return new Float32Array([newScale, newScale, 1.0]);
+    }else {
+        return new Float32Array([5.0, 5.0, 5.0]);
+    }
+}
+// Load source from the index.html
+function load_source(sid){
+    let shader = document.getElementById(sid);
+    let shader_source = shader.textContent;
+    return shader_source;
+}
+// Generate a set of vertices for emulating the firworks shape
+function gen_vertices(){
+    var limit = 2 * Math.PI;
+    var theta = 0;
+    var length = 0;
+    let scp1 = 64;
+    let scp2 = 6;
+    var r = ((Math.abs(Math.cos(theta * scp1)) + (0.25 - (Math.cos((theta * scp1) + (Math.PI/2))) * 6))/(2 + (Math.abs(Math.cos((theta * scp2) + (Math.PI / 2)))) * 1.2));
+    vertices.push(0.0, 0.0);
+
+    for(theta; theta <= limit; theta = theta + 0.001) {
+        let x = (((Math.abs(Math.cos(theta * scp1)) + (0.25 - (Math.cos((theta * scp1) + (Math.PI/2))) * 6))/(2 + (Math.abs(Math.cos((theta * scp2) + (Math.PI / 2)))) * 1.2))) * Math.cos(theta);
+        vertices.push(x / 10);
+        let y = (((Math.abs(Math.cos(theta * scp1)) + (0.25 - (Math.cos((theta * scp1) + (Math.PI/2))) * 6))/(2 + (Math.abs(Math.cos((theta * scp2) + (Math.PI / 2)))) * 1.2))) * Math.sin(theta)
+        vertices.push(y / 10);
+        length = length + 1;
+    }
+
+    return length+1;
+}
+
+function cord_to_clip(x, y, canvas){
+  coord_x = ((x / canvas.width) * 2) - 1;
+  coord_y = -(((y / canvas.height) * 2) -1);
 }
